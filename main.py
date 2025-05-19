@@ -1,4 +1,3 @@
-# this is the microservice
 from flask import Flask, request, jsonify
 from docx import Document
 import fitz  # PyMuPDF
@@ -33,33 +32,45 @@ def clean_up(text):
     cleaned_lines = [' '.join(line.strip().split()) for line in lines if line.strip()]
     return '\n'.join(cleaned_lines)
 
-@app.route('/upload', methods=['POST'])
-def text_extractor():
+def validate_file():
     if 'file' not in request.files:
-        return jsonify({"error": "No file part"}), 400
-
+        return None, jsonify({"error": "No file part"}), 400
+    
     file = request.files['file']
-    filename = file.filename.lower()
 
-    if filename == '':
-        return jsonify({"error": "No selected file"}), 400
-
-    if not is_supported(filename):
-        return jsonify({
+    if file.filename == '':
+        return None, jsonify({"error": "No selected file"}), 400
+    
+    if not is_supported(file.filename.lower()):
+        return None, jsonify({
             "error": "Unsupported file type. Only .txt, .docx, and .pdf are allowed."
         }), 415
+    
+    return file, None, None
 
+def extract_text(file):
+    filename = file.filename.lower()
+
+    if filename.endswith('.txt'):
+        return txt_handler(file)
+    
+    elif filename.endswith('.docx'):
+        return docx_handler(file)
+    
+    elif filename.endswith('.pdf'):
+        return pdf_handler(file)
+
+@app.route('/upload', methods=['POST'])
+def text_extractor():
+    file, err_msg, status = validate_file()
+
+    if err_msg:
+        return err_msg, status
+    
     try:
-        if filename.endswith('.txt'):
-            text = txt_handler(file)
-        elif filename.endswith('.docx'):
-            text = docx_handler(file)
-        elif filename.endswith('.pdf'):
-            text = pdf_handler(file)
+        text = extract_text(file)
 
-        cleaned_text = clean_up(text)
-        return jsonify({"extracted_text": cleaned_text})
-
+        return jsonify({"extracted_text": clean_up(text)})
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
     except Exception as e:
